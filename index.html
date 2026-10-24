@@ -80,6 +80,21 @@
         #force-phase-btn:active { background: #cc5200; }
         #reset-btn { background: #ff3333; color: white; margin-top: 15px; width: 180px; padding: 8px 15px; font-size: 0.9rem; }
         
+        /* 複数鬼選択用のトグルボタンスタイル */
+        #oni-buttons-container {
+            display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 12px;
+        }
+        .oni-toggle-btn {
+            background: #2b2b2b; color: #bbb; border: 2px solid #555;
+            padding: 10px 14px; border-radius: 8px; font-size: 1rem; font-weight: bold;
+            cursor: pointer; min-width: 105px; text-align: center; box-sizing: border-box;
+            transition: all 0.15s;
+        }
+        .oni-toggle-btn.selected {
+            background: #ff3333; color: #fff; border-color: #ffcc00;
+            box-shadow: 0 0 10px rgba(255, 51, 51, 0.6);
+        }
+
         /* ログイン画面のスタイル */
         #login-screen {
             position: absolute; top: 0; left: 0; right: 0; bottom: 0;
@@ -160,14 +175,15 @@
             <div id="tab3-button" class="tab-button" onclick="switchTab(3)">マップ</div>
         </div>
 
-        <div id="oni-display-bar" style="clear: both; width: 100%; max-width: 500px; margin: 0 auto; background: #331111; border-bottom: 1px solid #ff3333; padding: 10px 0; font-weight: bold; color: #ff5555; font-size: 1.1rem; display: none; box-sizing: border-box; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-            現在の鬼：<span id="current-oni-text" style="color: #fff; background: #ff3333; padding: 2px 8px; border-radius: 4px;">未設定</span>
+        <div id="oni-display-bar" style="clear: both; width: 100%; max-width: 500px; margin: 0 auto; background: #331111; border-bottom: 1px solid #ff3333; padding: 10px 8px; font-weight: bold; color: #ff5555; font-size: 1.05rem; display: none; box-sizing: border-box; line-height: 1.4;">
+            現在の鬼：<span id="current-oni-text" style="color: #fff; background: #ff3333; padding: 2px 8px; border-radius: 4px; display: inline-block;">未設定</span>
         </div>
 
         <div id="tab1-content" class="tab-content active">
             <h1>MISSION TIMER <span id="role-badge" style="font-size:0.8rem; color:#aaa;"></span></h1>
             <div id="phase-badge">待機中</div>
             <div id="timer">60:00</div>
+            <div id="next-disclosure-text" style="font-size: 0.85rem; color: #aaa; margin-top: -6px; margin-bottom: 12px;">次の位置公開まで：--分</div>
             
             <div id="mission-box">
                 <div id="mission-text">データベースに接続中...</div>
@@ -191,17 +207,14 @@
 
         <div id="tab2-content" class="tab-content">
             <h1>現在地の共有</h1>
+            <div id="next-disclosure-text-tab2" style="font-size: 0.85rem; color: #aaa; margin-bottom: 12px;">次の位置公開まで：--分</div>
             
             <div id="master-oni-area" style="display: none; background: #331111; padding: 15px; border-radius: 10px; margin-bottom: 20px; border: 2px solid #ff3333;">
-                <div style="color:#ff5555; font-weight:bold; margin-bottom:10px; font-size:0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">【マスター専用】現在の鬼を指名</div>
-                <select id="oni-select" style="width:85%; margin-bottom: 10px;">
-                    <option value="チームA">チームA</option>
-                    <option value="チームB">チームB</option>
-                    <option value="チームC">チームC</option>
-                    <option value="チームD">チームD</option>
-                </select>
+                <div style="color:#ff5555; font-weight:bold; margin-bottom:6px; font-size:0.95rem;">【マスター専用】現在の鬼を指名 (複数選択可)</div>
+                <div style="font-size:0.8rem; color:#ccc; margin-bottom:10px;">タップして鬼にするチーム（複数可）を選び、確定を押してください</div>
+                <div id="oni-buttons-container"></div>
                 <div class="btn-container" style="margin-top:5px;">
-                    <div class="game-btn" onclick="submitOni()" style="background:#ff3333; color:#fff; width:200px;">鬼を確定・更新</div>
+                    <div class="game-btn" onclick="submitOni()" style="background:#ff3333; color:#fff; width:220px;">鬼を確定・更新</div>
                 </div>
 
                 <div style="margin: 18px 0 12px 0; border-top: 1px solid #662222;"></div>
@@ -321,48 +334,35 @@
         let map;
         let mapMarkers = {};
 
+        // 複数鬼管理用の配列
+        let currentOniList = [];
+
         const allMissions = [
-            "環状線に半周乗れ\n(9駅先まで途中下車なし)",
             "天下茶屋を除く末端区間に行け\n(桜島,夢洲,江坂,井高野,大日,門真南,長田,南巽,八尾南,なかもず)",
             "環状線外の六文字以上の駅に降りたて\n(天神橋筋六丁目駅を除く)",
-            "今里ライナーを撮れ",
-            "ひらがなを含む駅名に降りたて\n(なんば駅を除く)",
-            "梅田の5駅のうち2駅に降りたて\n(大阪,梅田,東梅田,西梅田,北新地)\n(梅田の駅間の乗り換えは不可)",
+            "(路線図上で)ひらがなを含む駅名に降りたて\n(なんば駅を除く)",
+            "梅田の5駅のうち2駅に降りたて\n(大阪,梅田,東梅田,西梅田,北新地)\n(梅田の駅間の乗り換えは不可)(改札外に出ろ)",
             "逃走者チーム同士で落ち合え\n(連絡は禁止)\n(2チームクリアとする)",
             "路面電車を撮影せよ",
             "【環状線の】芦原橋、寺田町、桃谷、玉造、大阪城公園、桜ノ宮のうち2駅で降りよ",
-            "淀川を渡る電車を2路線以上撮影せよ\n(阪急の場合は一つとみなす)",
-            "大阪スマートアクセスパス公式HPに記載の大阪観光地情報と同じ画角の写真を3箇所撮影せよ",
+            "大阪スマートアクセスパス公式HPに記載の大阪観光地情報と同じ画角の写真を2箇所撮影せよ",
             "大阪市外の駅に行き撮影せよ\n(大阪スマートアクセスパスで行ける範囲の駅のみ)",
-            "大阪市内の区役所を2つと大阪市役所又は大阪府庁舎を撮影せよ",
-            "優等種別に乗れ(課金なし)\n(各停・普通以外の全種別)\n(通過駅は関係なし)",
-            "川がつく駅を2つ訪れよ",
-            "他社の乗り入れ車両に5駅間乗れ\n(乗換なしで達成すること)",
-            "途中駅止めの列車に終点まで10分以上または始発駅から(の短い方)乗れ\n(途中駅とは末端駅ではない駅とし、路線の起終点駅の一部も含む\n例 途中駅:北加賀屋、環状線京橋、桜島線西九条 末端駅:桜島 住之江公園 谷町線大日)",
-            "大阪スマートアクセスパスで乗車できない駅を3駅撮影せよ(3社)",
-            "乗った扉と左右反対側の扉から下車せよ\n(1区間のみ)",
-            "他路線の駅が行き先となっている列車に5駅間乗れ",
-            "通過駅のある列車に乗り、停車駅3駅間乗れ\n(乗車区間内に通過駅を含むこと)",
-            "「橋」がつく駅5箇所で降りよ\n(改札でる)",
-            "「丁目」がつく駅4箇所で降りよ\n(改札でる)",
-            "大阪メトロの5路線の車両を撮影せよ",
-            "環状線の外側にある路線のうち2路線に乗車せよ\n(東海道線, ゆめ咲線, 今里筋線, ニュートラム)",
+            "大阪市役所又は大阪府庁舎を撮影せよ",
+            "「川」がつく駅に訪れよ",
+            "大阪スマートアクセスパスで乗車できない駅を2駅撮影せよ(同一会社から2駅はNG)",
+            "「丁目」がつく駅4箇所で降りよ\n(電車で訪れること、出場で1カウント)",
             "大阪公立大学のいずれかのキャンパスへ行け",
-            "東西南北のいずれかが含まれる駅4箇所で降りよ\n(改札外の写真を撮る)\n(方位の個数は限らない「南南北北」でも可)",
-            "プロスポーツ選手・チーム(1部リーグメイン,社会人なし)がプレーするスタジアム・ドームのいずれかに行け",
+            "大阪市高速電気軌道本社を正面玄関側から撮れ",
             "表記が9文字以上ある駅へ行け\n(漢字、小さい文字も1文字とする)",
-            "JR在来線特急の写真を2車両撮れ\n(形式ではなく列車名で数える「くろしお」2形式はダメ)",
-            "大阪メトロ線内を走る他社の車両を5形式以上写真に撮れ",
-            "フリーパスエリア内で頭文字が「か行」の駅3ヶ所に行け",
-            "フリーパスエリア内で2面3線または2面4線の駅3ヶ所に行け\n(線路撤去済みの駅は対象とならない)",
-            "大阪メトロの駅のうち、フリーパス対象外の路線と接続している駅5ヶ所に行け\n(乗り換え案内がなされている箇所のみ)",
-            "音楽ライブ(野外ライブ除く)が行われている会場を2つ訪れよ",
-            "大阪府で乗降客数トップ5の駅のうち3つ訪れよ\n(目的地との行き来は御堂筋線禁止)",
-            "数字のつく鉄道駅に5か所行って写真を撮れ",
-            "ひらがなで書いたとき動物の名前を含む駅3か所に行き、駅名標の写真を撮れ\n(つるはし、なかもず、えびすちょう等)\n(部位名、1文字の動物及び「蝶」を除く)",
-            "令和製造のOsakaMetro車両3種に乗れ\n(乗車車両が令和製造である必要がある)",
-            "ハイブリッドバスを撮れ",
-            "淀川を渡れ(徒歩あり)\n(地下区間で渡るときは川の前後の駅の写真を撮る)"
+            "堺筋線「内」で阪急の車両を3形式写真に撮れ",
+            "大阪府で乗降客数の多い5駅(梅田、難波、新大阪、天王寺、京橋)のうち3つ訪れよ\n(目的地との行き来は御堂筋線禁止、Osaka Metroが設置した駅名入り看板のみ有効)（改札機上の看板などで達成可）",
+            "令和製造のOsakaMetro車両3種を撮れ\n(乗車車両が令和製造である必要がある)",
+            "淀川を渡れ(徒歩あり)\n(地下区間で渡るときは川の前後の駅の写真を撮る)",
+            "なんばに行け(改札口を「改札外から」撮れ)",
+            "緑木検車場に行け（留置車を撮れ）",
+            "メトロ森ノ宮車庫に行け（留置車を撮れ）",
+            "大日検車場に行け（留置車を撮れ）",
+            "八尾車庫に行け（留置車を撮れ）"
         ];
 
         let userRole = 'viewer'; 
@@ -384,6 +384,27 @@
         const teamSelect = document.getElementById('team-select');
         let currentTeamCount = 4;
 
+        // Firebase上のcurrentOniデータ（配列または文字列）を配列として正規化する関数
+        function parseOniList(rawOni) {
+            if (!rawOni || rawOni === "未設定") return [];
+            if (Array.isArray(rawOni)) return rawOni.filter(Boolean);
+            if (typeof rawOni === "string") {
+                return rawOni.split(/[、,・]/).map(s => s.trim()).filter(s => s && s !== "未設定");
+            }
+            return [];
+        }
+
+        // 指定チームが現在鬼かどうか判定する関数
+        function isTeamOni(teamName, oniList = currentOniList) {
+            return Array.isArray(oniList) && oniList.includes(teamName);
+        }
+
+        // 鬼リストを表示用文字列に変換する関数
+        function formatOniDisplay(oniList = currentOniList) {
+            if (!Array.isArray(oniList) || oniList.length === 0) return "未設定";
+            return oniList.join("・");
+        }
+
         // インデックス(0, 1, 2...)からチーム名(チームA, チームB... チームZ, チームAA...)を生成
         function getTeamNameByIndex(index) {
             let letters = '';
@@ -395,34 +416,83 @@
             return 'チーム' + letters;
         }
 
-        // チーム数に応じてログイン画面と鬼指名画面のプルダウンを動的に更新
+        // マスター画面の複数鬼選択トグルボタン群を描画・更新
+        function renderOniButtons() {
+            const container = document.getElementById('oni-buttons-container');
+            if (!container) return;
+
+            // 現在選択中の状態を保持（まだ操作していなければ currentOniList を反映）
+            const existingBtns = container.querySelectorAll('.oni-toggle-btn');
+            let activeSelection = [];
+            if (existingBtns.length > 0) {
+                existingBtns.forEach(btn => {
+                    if (btn.classList.contains('selected')) {
+                        activeSelection.push(btn.dataset.team);
+                    }
+                });
+            } else {
+                activeSelection = [...currentOniList];
+            }
+
+            container.innerHTML = '';
+            for (let i = 0; i < currentTeamCount; i++) {
+                const tName = getTeamNameByIndex(i);
+                const btn = document.createElement('div');
+                btn.className = 'oni-toggle-btn' + (activeSelection.includes(tName) ? ' selected' : '');
+                btn.dataset.team = tName;
+                btn.textContent = tName;
+                btn.onclick = () => {
+                    btn.classList.toggle('selected');
+                };
+                container.appendChild(btn);
+            }
+        }
+
+        // データベースの最新鬼リストをマスターのボタン選択状態に同期
+        function syncOniButtonsWithDatabase(oniList) {
+            const container = document.getElementById('oni-buttons-container');
+            if (!container) return;
+            const buttons = container.querySelectorAll('.oni-toggle-btn');
+            if (buttons.length === 0) {
+                renderOniButtons();
+            }
+            container.querySelectorAll('.oni-toggle-btn').forEach(btn => {
+                if (oniList.includes(btn.dataset.team)) {
+                    btn.classList.add('selected');
+                } else {
+                    btn.classList.remove('selected');
+                }
+            });
+        }
+
+        // チーム数に応じてログイン画面と鬼指名ボタンを動的に更新
         function updateTeamSelectOptions(count) {
             const validCount = Math.max(2, parseInt(count, 10) || 4);
             currentTeamCount = validCount;
 
             const teamSelectEl = document.getElementById('team-select');
-            const oniSelectEl = document.getElementById('oni-select');
             const countInputEl = document.getElementById('team-count-input');
 
             if (countInputEl && document.activeElement !== countInputEl) {
                 countInputEl.value = validCount;
             }
 
-            [teamSelectEl, oniSelectEl].forEach(selectEl => {
-                if (!selectEl) return;
-                const prevValue = selectEl.value;
-                selectEl.innerHTML = '';
+            if (teamSelectEl) {
+                const prevValue = teamSelectEl.value;
+                teamSelectEl.innerHTML = '';
                 for (let i = 0; i < validCount; i++) {
                     const tName = getTeamNameByIndex(i);
                     const opt = document.createElement('option');
                     opt.value = tName;
                     opt.textContent = tName;
-                    selectEl.appendChild(opt);
+                    teamSelectEl.appendChild(opt);
                 }
-                if (prevValue && Array.from(selectEl.options).some(o => o.value === prevValue)) {
-                    selectEl.value = prevValue;
+                if (prevValue && Array.from(teamSelectEl.options).some(o => o.value === prevValue)) {
+                    teamSelectEl.value = prevValue;
                 }
-            });
+            }
+
+            renderOniButtons();
         }
 
         // ログイン前の画面でもチーム数の変更がリアルタイム反映されるように監視
@@ -484,9 +554,9 @@
                 
                 gameRef.once('value').then((snapshot) => {
                     const data = snapshot.val();
-                    const currentOni = data ? data.currentOni : "未設定";
+                    const oniList = data ? parseOniList(data.currentOni) : [];
                     locRef.once('value').then((locSnapshot) => {
-                        updateMapMarkers(locSnapshot.val(), currentOni);
+                        updateMapMarkers(locSnapshot.val(), oniList);
                     });
                 });
             } else {
@@ -528,6 +598,62 @@
             document.getElementById('oni-display-bar').style.display = 'block'; 
             listenToDatabase();
             listenToLocations(); 
+            startDisclosureCountdown();
+        }
+
+        let disclosureInterval;
+        function updateDisclosureCountdown() {
+            const now = new Date();
+            const clockMin = now.getMinutes();
+            const isOni = isTeamOni(myTeam, currentOniList);
+
+            let nextMinute = 0;
+            const nextDate = new Date(now.getTime());
+
+            if (isOni) {
+                if (clockMin < 30) {
+                    nextMinute = 30;
+                    nextDate.setMinutes(30, 0, 0);
+                } else {
+                    nextMinute = 0;
+                    nextDate.setHours(now.getHours() + 1, 0, 0, 0);
+                }
+            } else {
+                if (clockMin < 15) {
+                    nextMinute = 15;
+                    nextDate.setMinutes(15, 0, 0);
+                } else if (clockMin < 30) {
+                    nextMinute = 30;
+                    nextDate.setMinutes(30, 0, 0);
+                } else if (clockMin < 45) {
+                    nextMinute = 45;
+                    nextDate.setMinutes(45, 0, 0);
+                } else {
+                    nextMinute = 0;
+                    nextDate.setHours(now.getHours() + 1, 0, 0, 0);
+                }
+            }
+
+            const diffMs = Math.max(0, nextDate.getTime() - now.getTime());
+            const remainTotalSec = Math.ceil(diffMs / 1000);
+            const remainMin = Math.ceil(diffMs / 60000);
+            const mm = Math.floor(remainTotalSec / 60);
+            const ss = (remainTotalSec % 60).toString().padStart(2, '0');
+            const nextMinLabel = nextMinute === 0 ? "00" : nextMinute.toString();
+            const roleLabel = isOni ? "鬼" : "逃走者";
+
+            const textContent = `次の位置公開（${nextMinLabel}分・${roleLabel}）まで：あと ${remainMin}分（${mm}:${ss}）`;
+
+            const el1 = document.getElementById('next-disclosure-text');
+            const el2 = document.getElementById('next-disclosure-text-tab2');
+            if (el1) el1.textContent = textContent;
+            if (el2) el2.textContent = textContent;
+        }
+
+        function startDisclosureCountdown() {
+            updateDisclosureCountdown();
+            clearInterval(disclosureInterval);
+            disclosureInterval = setInterval(updateDisclosureCountdown, 1000);
         }
 
         function listenToDatabase() {
@@ -544,12 +670,16 @@
                 const firstCleared = !!(data && data.firstCleared);
                 const clearedTeams = (data && data.clearedTeams) ? data.clearedTeams : [];
 
+                currentOniList = data ? parseOniList(data.currentOni) : [];
+                document.getElementById('current-oni-text').textContent = formatOniDisplay(currentOniList);
+                syncOniButtonsWithDatabase(currentOniList);
+                updateDisclosureCountdown();
+
                 if (!data || !data.endTime || status === 'not_started') {
                     phaseBadge.textContent = "開始前";
                     phaseBadge.style.color = "#aaa";
                     phaseBadge.style.borderColor = "#555";
                     timerDisplay.textContent = "60:00";
-                    document.getElementById('current-oni-text').textContent = (data && data.currentOni) ? data.currentOni : "未設定";
                     missionText.innerHTML = (userRole === 'master' || userRole === 'rep') ? "ゲームを開始してください" : "代表者のゲーム開始を待っています...";
                     missionText.style.color = "#ffffff";
                     
@@ -626,15 +756,13 @@
                     }
                 }
 
-                const oniName = data.currentOni || "未設定";
-                document.getElementById('current-oni-text').textContent = oniName;
-
+                // 位置一覧の鬼カラー再適用
                 document.querySelectorAll('.member-location-item').forEach(item => {
                     const nameEl = item.querySelector('.member-name');
                     const locEl = item.querySelector('.member-loc');
                     if (nameEl && locEl) {
                         const currentName = nameEl.textContent.trim();
-                        if (currentName === oniName) {
+                        if (isTeamOni(currentName, currentOniList)) {
                             nameEl.style.color = '#ff3333';
                             locEl.style.color = '#ff9999';
                         } else {
@@ -642,6 +770,11 @@
                             locEl.style.color = '#ffffff';
                         }
                     }
+                });
+
+                // マップピンの色も最新鬼リストで更新
+                locRef.once('value').then((locSnap) => {
+                    updateMapMarkers(locSnap.val(), currentOniList);
                 });
 
                 if (data.endTime !== currentSessionId) {
@@ -680,8 +813,7 @@
                     const currentClock = new Date();
                     const clockMin = currentClock.getMinutes();
 
-                    const currentOni = document.getElementById('current-oni-text').textContent;
-                    const isOni = (myTeam === currentOni);
+                    const isOni = isTeamOni(myTeam, currentOniList);
 
                     let deadlineMinute = 0;
                     if (isOni) {
@@ -843,11 +975,9 @@
                 if (!data) {
                     listContainer.innerHTML = '<div style="color:#888; padding:20px;">まだ位置の申告がありません</div>';
                     myLastUpdateTimestamp = 0; 
-                    updateMapMarkers(null, "未設定");
+                    updateMapMarkers(null, currentOniList);
                     return;
                 }
-
-                const currentOni = document.getElementById('current-oni-text').textContent;
 
                 if (data[myTeam]) {
                     myLastUpdateTimestamp = data[myTeam].timestamp || 0;
@@ -860,7 +990,7 @@
                     const item = document.createElement('div');
                     item.className = 'member-location-item';
 
-                    const isOni = (team === currentOni);
+                    const isOni = isTeamOni(team, currentOniList);
                     const nameColor = isOni ? '#ff3333' : '#00ccff';
                     const textColor = isOni ? '#ff9999' : '#ffffff';
 
@@ -877,11 +1007,11 @@
                     listContainer.appendChild(item);
                 }
 
-                updateMapMarkers(data, currentOni);
+                updateMapMarkers(data, currentOniList);
             });
         }
 
-        function updateMapMarkers(data, currentOni) {
+        function updateMapMarkers(data, oniList = currentOniList) {
             if (!map) return; 
 
             for (let team in mapMarkers) {
@@ -897,7 +1027,7 @@
                 const pData = data[team];
                 
                 if (pData.lat && pData.lng) {
-                    const isOni = (team === currentOni);
+                    const isOni = isTeamOni(team, oniList);
                     const markerColor = isOni ? '#ff3333' : '#00ccff'; 
                     
                     if (mapMarkers[team]) {
@@ -970,8 +1100,8 @@
                 }
 
                 // 1チーム目のクリアの場合（フローチャート分岐）
-                const has15MinLeft = timeLeftMs > SHORTENED_DURATION_MS;
-                const confirmMsg = has15MinLeft
+                const has5MinLeft = timeLeftMs > SHORTENED_DURATION_MS;
+                const confirmMsg = has5MinLeft
                     ? "【確認】\n本当にミッション完了しますか？\n\n・1チーム目のクリアとなります\n・残り時間が5分以上あるため、タイマーが「残り5分」に短縮されます！"
                     : "【確認】\n本当にミッション完了しますか？\n\n・1チーム目のクリアとなります\n・残り時間が5分以下のため、タイマーは「そのまま」進行します！";
 
@@ -983,8 +1113,8 @@
                     clearedTeams.push(myTeam);
                 }
 
-                // 15分残ってる ➡️ Yes: 残り15分に短縮 / No: タイマーそのまま
-                const updatedEndTime = has15MinLeft ? (now + SHORTENED_DURATION_MS) : data.endTime;
+                // 5分残ってる ➡️ Yes: 残り5分に短縮 / No: タイマーそのまま
+                const updatedEndTime = has5MinLeft ? (now + SHORTENED_DURATION_MS) : data.endTime;
 
                 gameRef.update({
                     firstCleared: true,
@@ -1063,12 +1193,23 @@
             }
         }
 
+        // ★複数鬼の選択状態をFirebaseに保存
         function submitOni() {
-            const selectedOni = document.getElementById('oni-select').value;
+            const container = document.getElementById('oni-buttons-container');
+            const selectedButtons = container ? container.querySelectorAll('.oni-toggle-btn.selected') : [];
+            const selectedOnis = Array.from(selectedButtons).map(btn => btn.dataset.team);
+
+            if (selectedOnis.length === 0) {
+                if (!confirm("鬼が1チームも選択されていません。「未設定」にしますか？")) {
+                    return;
+                }
+            }
+
             gameRef.update({
-                currentOni: selectedOni
+                currentOni: selectedOnis.length > 0 ? selectedOnis : "未設定"
             }).then(() => {
-                alert("現在の鬼を「" + selectedOni + "」に更新しました！");
+                const label = selectedOnis.length > 0 ? selectedOnis.join("・") : "未設定";
+                alert("現在の鬼を「" + label + "」に更新しました！");
             });
         }
 
